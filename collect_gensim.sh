@@ -1,0 +1,1 @@
+python collect_gensim.py n=10 task=packing-boxes-pairs-seen-colors

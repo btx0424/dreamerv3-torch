@@ -330,6 +330,7 @@ class MultiEncoder(nn.Module):
             self._cnn = ConvEncoder(
                 input_shape, cnn_depth, act, norm, kernel_size, minres
             )
+            # self.outdim += self._cnn(torch.zeros(input_shape)).numel()
             self.outdim += self._cnn.outdim
         if self.mlp_shapes:
             input_size = sum([sum(v) for v in self.mlp_shapes.values()])
@@ -511,24 +512,28 @@ class ConvDecoder(nn.Module):
     ):
         super(ConvDecoder, self).__init__()
         act = getattr(torch.nn, act)
-        self._shape = shape
-        self._cnn_sigmoid = cnn_sigmoid
+        self.target_shape = shape
         layer_num = int(np.log2(shape[1]) - np.log2(minres))
+        self.code_shape = (
+            int(shape[1] / 2**layer_num),
+            int(shape[2] / 2**layer_num),
+            depth * 2**(layer_num-1)
+        )
+        self._cnn_sigmoid = cnn_sigmoid
         self._minres = minres
-        out_ch = minres**2 * depth * 2 ** (layer_num - 1)
-        self._embed_size = out_ch
+        self._embed_size = int(np.prod(self.code_shape))
 
-        self._linear_layer = nn.Linear(feat_size, out_ch)
+        self._linear_layer = nn.Linear(feat_size, self._embed_size)
         self._linear_layer.apply(tools.uniform_weight_init(outscale))
-        in_dim = out_ch // (minres**2)
+        in_dim = self.code_shape[2]
         out_dim = in_dim // 2
 
         layers = []
-        h, w = minres, minres
+        h, w = shape[1], shape[2]
         for i in range(layer_num):
             bias = False
             if i == layer_num - 1:
-                out_dim = self._shape[0]
+                out_dim = self.target_shape[0]
                 act = False
                 bias = True
                 norm = False
@@ -568,14 +573,12 @@ class ConvDecoder(nn.Module):
     def forward(self, features, dtype=None):
         x = self._linear_layer(features)
         # (batch, time, -1) -> (batch * time, h, w, ch)
-        x = x.reshape(
-            [-1, self._minres, self._minres, self._embed_size // self._minres**2]
-        )
+        x = x.reshape([-1, *self.code_shape])
         # (batch, time, -1) -> (batch * time, ch, h, w)
         x = x.permute(0, 3, 1, 2)
         x = self.layers(x)
         # (batch, time, -1) -> (batch, time, ch, h, w)
-        mean = x.reshape(features.shape[:-1] + self._shape)
+        mean = x.reshape(features.shape[:-1] + self.target_shape)
         # (batch, time, ch, h, w) -> (batch, time, h, w, ch)
         mean = mean.permute(0, 1, 3, 4, 2)
         if self._cnn_sigmoid:

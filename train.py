@@ -5,6 +5,8 @@ import gym.spaces
 import os
 import hydra
 import logging
+import wandb
+from omegaconf import OmegaConf
 
 from tqdm import tqdm
 from torch.utils.data import DataLoader, Dataset
@@ -82,6 +84,8 @@ class GensimDataset(Dataset):
 def main(cfg):
     device = cfg.world_model.device
 
+    run = wandb.init(project="GensimEval", entity="btx0424")
+
     model = WorldModel(
         obs_space=gym.spaces.Dict(
             {
@@ -94,8 +98,10 @@ def main(cfg):
         config=cfg.world_model,
     ).to(device)
 
-    data_dir = "/home/btx0424/gensim_ws/GenSim/data"
-    # data_dir = os.environ.get("GENSIM_PATH")
+    data_dir = os.environ.get("GENSIM_PATH", None)
+    if data_dir is None:
+        raise ValueError
+
     try:
         dataset = GensimDataset.load(data_dir)
     except:
@@ -117,7 +123,10 @@ def main(cfg):
             data["cont"] = (1.0 - data["is_terminal"]).unsqueeze(-1)
 
             post, context, metrics = model._train(data)
-            print(f"iteration: {i}, model loss: {metrics["model_loss"].item()}")
+            
+            run.log(metrics)
+            print(f"Epoch {epoch}, iteration {i}")
+            print(OmegaConf.to_yaml(metrics))
             
             if (i + 1) % 200 == 0:
                 with torch.no_grad():

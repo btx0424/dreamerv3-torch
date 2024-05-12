@@ -98,14 +98,21 @@ def main(cfg):
         config=cfg.world_model,
     ).to(device)
 
-    data_dir = os.environ.get("GENSIM_PATH", None)
+    if cfg.get("ckpt", None) is not None:
+        print(f"load checkpoint from {cfg.ckpt}")
+        ckpt = torch.load(cfg.ckpt)
+        model.load_state_dict(ckpt)
+        del ckpt
+
+
+    data_dir = os.path.join(os.environ.get("GENSIM_ROOT"), "data")
     if data_dir is None:
         raise ValueError
 
     try:
-        dataset = GensimDataset.load(data_dir)
+        dataset = GensimDataset.load(data_dir, 40)
     except:
-        dataset = GensimDataset.make(data_dir)
+        dataset = GensimDataset.make(data_dir, 40)
     
 
     dataloader = DataLoader(
@@ -115,7 +122,7 @@ def main(cfg):
         collate_fn=torch.stack
     )
 
-    for epoch in range(cfg.get("epochs", 5)):
+    for epoch in range(cfg.get("epochs", 10)):
         for i, data in enumerate(dataloader):
             # some manual processing
             data = data.to(device)
@@ -124,15 +131,20 @@ def main(cfg):
 
             post, context, metrics = model._train(data)
             
-            run.log(metrics)
+            metrics = {k: np.mean(v) for k, v in metrics.items()}
             print(f"Epoch {epoch}, iteration {i}")
-            print(OmegaConf.to_yaml(metrics))
+            pprint(metrics)
             
             if (i + 1) % 200 == 0:
                 with torch.no_grad():
                     results = model.video_pred(data).cpu() * 255.0
-                write_video(f"video-{i}.mp4", results[0], fps=10)
+                path = os.path.join(run.dir, f"video-{epoch}-{i}.mp4")
+                write_video(path, results[0], fps=10)
+                metrics["video"] = wandb.Video(path, fps=10)
 
+            run.log(metrics)
+        ckpt_path = os.path.join(run.dir, f"ckpt-{epoch}.pt")
+        torch.save(model.state_dict(), ckpt_path)
     
 
 if __name__ == "__main__":

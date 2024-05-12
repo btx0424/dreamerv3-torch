@@ -22,7 +22,7 @@ class Environment(_Environment):
 
     def __init__(self, assets_root, task=None, disp=False, shared_memory=False, hz=240, record_cfg=None):
         super().__init__(assets_root, task, disp, shared_memory, hz, record_cfg)
-        self.agent_cams[0]["image_size"] = (240, 320)
+        self.agent_cams[0]["image_size"] = (180, 240)
         self.agent_cams[0]["intrinsics"] = (225, *self.agent_cams[0]["intrinsics"][1:])
 
     def reset(self):
@@ -110,7 +110,7 @@ def main(cfg):
     task.mode = cfg['mode']
 
     agent = task.oracle(env)
-    dataset_path = os.path.join(GENSIM_ROOT, "data", cfg["task"])
+    dataset_path = os.path.join(GENSIM_ROOT, "data", cfg["mode"], cfg["task"])
     os.makedirs(dataset_path, exist_ok=True)
 
     class SingleTaskDataset:

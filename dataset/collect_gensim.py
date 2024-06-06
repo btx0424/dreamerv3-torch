@@ -22,13 +22,27 @@ class Environment(_Environment):
 
     def __init__(self, assets_root, task=None, disp=False, shared_memory=False, hz=240, record_cfg=None):
         super().__init__(assets_root, task, disp, shared_memory, hz, record_cfg)
-        self.agent_cams[0]["image_size"] = (240, 320)
-        self.agent_cams[0]["intrinsics"] = (225, *self.agent_cams[0]["intrinsics"][1:])
+        # self.agent_cams[0]["image_size"] = (240, 320)
+        # self.agent_cams[0]["intrinsics"] = (225, *self.agent_cams[0]["intrinsics"][1:])
+        self.agent_cams[0]["image_size"] = (180, 240)
+        self.agent_cams[0]["intrinsics"] = (160, *self.agent_cams[0]["intrinsics"][1:])
 
     def reset(self):
         self._joint_action = []
+        self._high_action = defaultdict(list)
+        # self._high_obs = []
+        self.step_counter = 0
         self._obs = defaultdict(list)
-        return super().reset()
+        obs = super().reset()
+        return obs
+    
+    def step(self, action=None):
+        if action is not None:
+            for k, v in action.items():
+                self._high_action[k].append(np.concatenate(v))
+            self._high_action["t"].append(len(self._joint_action))
+        obs, reward, done, info = super().step(action)
+        return obs, reward, done, info
     
     def movej(self, targj, speed=0.01, timeout=150):
         """Move UR5 to target joint configuration."""
@@ -78,7 +92,19 @@ class Environment(_Environment):
         is_first[0] = True
         rgb = np.stack(self._obs["rgb"])
         depth = np.stack(self._obs["depth"])
+
+        action = np.concatenate([
+            np.stack(self._high_action["pose0"]),
+            np.stack(self._high_action["pose1"])
+        ], axis=-1)
+        high_action = np.zeros((episode_len, 14))
+        high_action[self._high_action["t"]] = action
+        high_action_mask = np.zeros((episode_len,), dtype=bool)
+        high_action_mask[self._high_action["t"]] = True
+        
         episode_data = {
+            "high_action": high_action,
+            "high_action_mask": high_action_mask,
             "action": np.stack(self._joint_action),
             "image": np.concatenate([rgb, depth], axis=-1),
             "state": np.stack(self._obs["state"]),

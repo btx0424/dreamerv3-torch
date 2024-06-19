@@ -1,5 +1,5 @@
 setuptools==60.0.0
-torch==2.0.0
+# torch==2.0.0
 torchvision==0.15.1
 pandas==1.2.4
 matplotlib==3.5.0

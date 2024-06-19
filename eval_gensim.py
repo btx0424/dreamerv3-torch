@@ -4,18 +4,27 @@ import gym
 import gym.spaces
 import os
 import hydra
+import logging
+import wandb
+from omegaconf import OmegaConf
 
-from torch.utils.data import DataLoader
-from torchvision.io import write_video
-from torchvision.utils import make_grid
-from pprint import pprint
+from tqdm import tqdm
+from torch.utils.data import DataLoader, Dataset
+from tensordict import TensorDict, tensorclass, MemoryMappedTensor
 
 from models import WorldModel
+from pprint import pprint
+
+from torchvision.io import write_video
+from torchvision.utils import make_grid
+from sentence_transformers import SentenceTransformer
+
 from dataset.gensim import GensimDataset
 
 FILE_PATH = os.path.dirname(os.path.realpath(__file__))
+CFG_PATH = os.path.join(FILE_PATH, "cfg")
 
-@hydra.main(config_path=FILE_PATH, config_name="train")
+@hydra.main(config_path=CFG_PATH, config_name="eval")
 def main(cfg):
     device = cfg.world_model.device
 
@@ -31,37 +40,46 @@ def main(cfg):
         config=cfg.world_model,
     ).to(device)
 
-    data_dir = "/home/btx0424/gensim_ws/GenSim/data"
-    # data_dir = os.environ.get("GENSIM_PATH")
+    # language_sim = True
+    # if language_sim:
+    #     llm = SentenceTransformer("all-MiniLM-L6-v2", cache_folder="./llm")
+
+    if cfg.get("ckpt", None) is not None:
+        print(f"load checkpoint from {cfg.ckpt}")
+        ckpt = torch.load(cfg.ckpt)
+        model.load_state_dict(ckpt)
+        del ckpt
+    
+    train_dataset = GensimDataset.make("/localdata/bxu/isaac_ws/GenEval/GenSim/data/train")
+    print(train_dataset.task_desc)
+
     try:
-        dataset = GensimDataset.load(data_dir)
+        dataset = GensimDataset.load(cfg.dataset.path, 40)
     except:
-        dataset = GensimDataset.make(data_dir)
+        dataset = GensimDataset.make(cfg.dataset.path, 40)
     
+    model.eval()
+    print(dataset.tasks)
+    task_losses = {}
+    with torch.no_grad():
+        for task in dataset.tasks:
+            print(dataset.task_desc[task])
+            losses_all = []
+            t = tqdm(dataset.episodes(task), total=len(dataset.task_episodes[task]), desc=task)
+            for i, data in enumerate(t):
+                # some manual processing
+                data = data.to(device).unsqueeze(0)
+                data["image"] = data["image"][..., :3] / 255.0
+                data["cont"] = (1.0 - data["is_terminal"]).unsqueeze(-1)
 
-    dataloader = DataLoader(
-        dataset, 
-        batch_size=cfg.train.batch_size, 
-        shuffle=True, 
-        collate_fn=torch.stack
-    )
-
-    for epoch in range(cfg.get("epochs", 5)):
-        for i, data in enumerate(dataloader):
-            # some manual processing
-            data = data.to(device)
-            data["image"] = data["image"][..., :3] / 255.0
-            data["cont"] = (1.0 - data["is_terminal"]).unsqueeze(-1)
-
-            post, context, metrics = model._train(data)
-            print(f"iteration: {i}, model loss: {metrics["model_loss"].item()}")
-            
-            if (i + 1) % 200 == 0:
-                with torch.no_grad():
-                    results = model.video_pred(data).cpu() * 255.0
-                write_video(f"video-{i}.mp4", results[0], fps=10)
-
-    
+                losses = model._eval(data)
+                losses = {k: torch.mean(v).item() for k, v in losses.items()}
+                losses_all.append(TensorDict(losses, []))
+            losses_all = torch.stack(losses_all)
+            losses_all = {k: torch.mean(v).item() for k, v in losses_all.items()}
+            task_losses[task] = losses_all
+            pprint(losses_all)
+    pprint(task_losses)
 
 if __name__ == "__main__":
     main()

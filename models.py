@@ -172,6 +172,45 @@ class WorldModel(nn.Module):
         post = {k: v.detach() for k, v in post.items()}
         return post, context, metrics
 
+    def _eval(self, data):
+        # action (batch_size, batch_length, act_dim)
+        # image (batch_size, batch_length, h, w, ch)
+        # reward (batch_size, batch_length)
+        # discount (batch_size, batch_length)
+        # data = self.preprocess(data)
+
+        with tools.RequiresGrad(self):
+            with torch.cuda.amp.autocast(self._use_amp):
+                embed = self.encoder(data)
+                post, prior = self.dynamics.observe(
+                    embed, data["action"], data["is_first"]
+                )
+                kl_free = self._config.kl_free
+                dyn_scale = self._config.dyn_scale
+                rep_scale = self._config.rep_scale
+                kl_loss, kl_value, dyn_loss, rep_loss = self.dynamics.kl_loss(
+                    post, prior, kl_free, dyn_scale, rep_scale
+                )
+                assert kl_loss.shape == embed.shape[:2], kl_loss.shape
+                preds = {}
+                for name, head in self.heads.items():
+                    grad_head = name in self._config.grad_heads
+                    feat = self.dynamics.get_feat(post)
+                    feat = feat if grad_head else feat.detach()
+                    pred = head(feat)
+                    if type(pred) is dict:
+                        preds.update(pred)
+                    else:
+                        preds[name] = pred
+                losses = {}
+                for name, pred in preds.items():
+                    loss = -pred.log_prob(data[name])
+                    assert loss.shape == embed.shape[:2], (name, loss.shape)
+                    losses[name] = loss
+                losses["dyn_loss"] = dyn_loss
+                losses["rep_loss"] = rep_loss
+        return losses
+
     # this function is called during both rollout and training
     def preprocess(self, obs):
         obs = obs.copy()

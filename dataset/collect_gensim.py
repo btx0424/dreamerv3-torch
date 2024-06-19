@@ -18,7 +18,11 @@ import einops
 from collections import defaultdict
 
 def dict_stack(dicts):
-    return {k: np.stack([d[k] for d in dicts]) for k in dicts[0]}
+    keys = dicts[0].keys()
+    result = {}
+    for k in keys:
+        result[k] = np.stack([d[k] for d in dicts])
+    return result
 
 class Environment(_Environment):
     
@@ -61,7 +65,7 @@ class Environment(_Environment):
                 "rgb": rgb,
                 "depth": einops.rearrange(depth, "h w -> h w 1")
             }
-            self._traj["obs"].append(low_obs)
+            self._traj["obs_low"].append(low_obs)
 
         obs, reward, done, info = super().step(action)
         self._traj["lang_goal"].append(info["lang_goal"])
@@ -69,7 +73,9 @@ class Environment(_Environment):
             "color_0": obs["color"][0],
             "color_1": obs["color"][1],
             "color_2": obs["color"][2],
-            "depth": obs["depth"],
+            "depth_0": obs["depth"][0],
+            "depth_1": obs["depth"][1],
+            "depth_2": obs["depth"][2],
         })
         return obs, reward, done, info
     

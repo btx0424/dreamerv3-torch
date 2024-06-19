@@ -115,7 +115,7 @@ class Environment(_Environment):
         return True
     
     def get_episode_data(self, rgb_array: bool=False):
-        episode_len_high = len(self._traj["obs_high"])
+        episode_len_high = len(self._traj["action_high"])
         episode_len_low = len(self._traj["obs_low"])
 
         is_terminal = np.zeros(episode_len_low, dtype=bool)
@@ -126,11 +126,11 @@ class Environment(_Environment):
         obs_high = dict_stack(self._traj["obs_high"])
         obs_high = {k: v[:-1] for k, v in obs_high.items()} # exclude last obs
         action_high = dict_stack(self._traj["action_high"])
-        assert len(obs_high["color_0"]) == len(action_high["pose0"])
+        assert len(obs_high["color_0"]) == len(action_high["pose0"]) == episode_len_high
         
         obs_low = dict_stack(self._traj["obs_low"])
         action_low = np.stack(self._traj["action_low"])
-        assert len(obs_low["rgb"]) == len(action_low)
+        assert len(obs_low["rgb"]) == len(action_low) == episode_len_low
 
         episode_data = {
             "obs_high": obs_high,

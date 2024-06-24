@@ -56,16 +56,17 @@ class Environment(_Environment):
         else:
             # called by `.reset`
             # get init state
-            jstate = p.getJointStates(self.ur5, self.joints)
-            currj = np.array([state[0] for state in jstate])
-            currjdot = np.array([state[1] for state in jstate])
-            rgb, depth, seg = self.render_camera(self.agent_cams[0])
-            low_obs = {
-                "state": np.concatenate([currj, currjdot]),
-                "rgb": rgb,
-                "depth": einops.rearrange(depth, "h w -> h w 1")
-            }
-            self._traj["obs_low"].append(low_obs)
+            pass
+            # jstate = p.getJointStates(self.ur5, self.joints)
+            # currj = np.array([state[0] for state in jstate])
+            # currjdot = np.array([state[1] for state in jstate])
+            # rgb, depth, seg = self.render_camera(self.agent_cams[0])
+            # low_obs = {
+            #     "state": np.concatenate([currj, currjdot]),
+            #     "rgb": rgb,
+            #     "depth": einops.rearrange(depth, "h w -> h w 1")
+            # }
+            # self._traj["obs_low"].append(low_obs)
 
         obs, reward, done, info = super().step(action)
         self._traj["lang_goal"].append(info["lang_goal"])
@@ -100,7 +101,7 @@ class Environment(_Environment):
             stepj = currj + v * speed
             gains = np.ones(len(self.joints))
             
-            if (self.step_counter+1) % self.decimation == 0:
+            if self.step_counter % self.decimation == 0:
                 rgb, depth, seg = self.render_camera(self.agent_cams[0])
                 self._traj["obs_low"].append({
                     "state": np.concatenate([currj, currjdot]),
@@ -132,11 +133,20 @@ class Environment(_Environment):
         obs_high = dict_stack(self._traj["obs_high"])
         obs_high = {k: v[:-1] for k, v in obs_high.items()} # exclude last obs
         action_high = dict_stack(self._traj["action_high"])
-        assert len(obs_high["color_0"]) == len(action_high["pose0"]) == episode_len_high
+        if not len(obs_high["color_0"]) == len(action_high["pose0"]) == episode_len_high:
+            raise ValueError("High-level episode length mismatch:"
+                            f"obs_high: {len(obs_high['color_0'])},"
+                            f"action_high: {len(action_high['pose0'])},"
+                            f"episode_len_high: {episode_len_high}")
+
         
         obs_low = dict_stack(self._traj["obs_low"])
         action_low = np.stack(self._traj["action_low"])
-        assert len(obs_low["rgb"]) == len(action_low) == episode_len_low
+        if not len(obs_low["rgb"]) == len(action_low) == episode_len_low:
+            raise ValueError("Low-level episode length mismatch:"
+                            f"obs_low: {len(obs_low['rgb'])},"
+                            f"action_low: {len(action_low)},"
+                            f"episode_len_low: {episode_len_low}")
 
         episode_data = {
             "obs_high": obs_high,

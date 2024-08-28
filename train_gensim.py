@@ -58,12 +58,12 @@ def main(cfg):
         del ckpt
 
 
-    data_dir = os.path.join(GENSIM_ROOT, "data", "train")
+    data_dir = os.path.join(GENSIM_ROOT, "data", "train", cfg.dataset)
 
     try:
-        dataset = GensimDataset.load(data_dir, 40, high_level=False)
+        dataset = GensimDataset.load(data_dir, 40, high_level=False, max_episodes=cfg.max_episodes)
     except:
-        dataset = GensimDataset.make(data_dir, 40, high_level=False)
+        dataset = GensimDataset.make(data_dir, 40, high_level=False, max_episodes=cfg.max_episodes)
     
 
     dataloader = DataLoader(

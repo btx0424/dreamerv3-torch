@@ -1,12 +1,13 @@
 train:
   batch_size: 8
 
-dataset: # gensim dataset
-  type: 'single' # 'single' or 'multi'
-  images: True
-  cache: True # load episodes to memory instead of reading from disk
-  augment:
-    theta_sigma: 60 # rotation sigma in degrees; N(mu = 0, sigma = theta_sigma).
+dataset: ???
+max_episodes: 10
+  # type: 'single' # 'single' or 'multi'
+  # images: True
+  # cache: True # load episodes to memory instead of reading from disk
+  # augment:
+  #   theta_sigma: 60 # rotation sigma in degrees; N(mu = 0, sigma = theta_sigma).
 
 world_model:
   precision: 32

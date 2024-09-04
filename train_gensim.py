@@ -21,6 +21,7 @@ from torchvision.transforms.functional import resize
 from gen_diversity.dataset.gensim import GensimDataset
 
 FILE_PATH = os.path.dirname(os.path.realpath(__file__))
+CFG_PATH = os.path.join(FILE_PATH, "cfg")
 GENSIM_ROOT = os.environ.get("GENSIM_ROOT")
 IMAGE_SIZE = (128, 128)
 
@@ -28,7 +29,7 @@ if GENSIM_ROOT is None:
     raise ValueError("Please set GENSIM_ROOT environment variable")
 
 
-@hydra.main(config_path=os.path.join(FILE_PATH, "cfg"), config_name="train")
+@hydra.main(config_path=CFG_PATH, config_name="train")
 def main(cfg):
     device = cfg.world_model.device
 
@@ -36,8 +37,11 @@ def main(cfg):
         project="GensimEval", 
         entity="btx0424",
         mode=cfg.wandb.mode,
+        name=f"{cfg.dataset}-{cfg.max_episodes}",
     )
     run.config["project"] = "gensim"
+    run.config["dataset"] = cfg.dataset
+    run.config["max_episodes"] = cfg.max_episodes
 
     model = WorldModel(
         obs_space=gym.spaces.Dict(

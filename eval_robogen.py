@@ -15,19 +15,17 @@ from tensordict import TensorDict, tensorclass, MemoryMappedTensor
 
 from models import WorldModel
 from pprint import pprint
+from setproctitle import setproctitle
 
 from torchvision.io import write_video
 from torchvision.utils import make_grid
 from torchvision.transforms.functional import resize
-from gen_diversity.dataset.gensim import GensimDataset
+from train_robogen import RoboGenDataset
 
 FILE_PATH = os.path.dirname(os.path.realpath(__file__))
 CFG_PATH = os.path.join(FILE_PATH, "cfg")
-GENSIM_ROOT = os.environ.get("GENSIM_ROOT")
+DATASET_ROOT = "/media/aa/hdd1/cf/data/"
 IMAGE_SIZE = (128, 128)
-
-if GENSIM_ROOT is None:
-    raise ValueError("Please set GENSIM_ROOT environment variable")
 
 
 # get all available evaluations
@@ -48,25 +46,26 @@ for run_dir in RUN_DIRS:
 
 @hydra.main(config_path=CFG_PATH, config_name="eval")
 def main(cfg):
+    setproctitle(f"eval_robogen-{cfg.dataset}")
+    
     device = cfg.world_model.device
 
-    data_dir = os.path.join(GENSIM_ROOT, "data", "train", cfg.dataset)
+    dataset_path = os.path.join(DATASET_ROOT, cfg.dataset)
 
     try:
-        dataset = GensimDataset.load(data_dir, 40, high_level=False, max_episodes=40)
+        dataset = RoboGenDataset.load(dataset_path, 40, max_episodes=40)
     except Exception as e:
         print(f"Failed to load dataset due to {e}, creating new one")
-        dataset = GensimDataset.make(data_dir, 40, high_level=False, max_episodes=40)
-    
+        dataset = RoboGenDataset.make(dataset_path, 40, max_episodes=40)
 
     model = WorldModel(
         obs_space=gym.spaces.Dict(
             {
                 "image": gym.spaces.Box(0, 255, (*IMAGE_SIZE, 3), dtype=np.uint8),
-                "state": gym.spaces.Box(0, 20, (12,), dtype=np.float32),
+                "state": gym.spaces.Box(0, 20, (7,), dtype=np.float32),
             }
         ),
-        act_space=gym.spaces.Box(-1, 1, (6,), dtype=np.float32),
+        act_space=gym.spaces.Box(-1, 1, (7,), dtype=np.float32),
         step=0,
         config=cfg.world_model,
     ).to(device)
@@ -95,15 +94,16 @@ def main(cfg):
         for i, data in enumerate(pbar):
             # some manual processing
             data = data.to(device)
-            data["image"] = resize(data["image"].flatten(0, 1), IMAGE_SIZE).unflatten(0, data.shape)
-            data["image"] = data["image"].permute(0, 1, 3, 4, 2)
+            # data["image"] = resize(data["image"].flatten(0, 1), IMAGE_SIZE).unflatten(0, data.shape)
+            # data["image"] = data["image"].permute(0, 1, 3, 4, 2)
             data["image"] = data["image"][..., :3] / 255.0
             data["cont"] = (1.0 - data["is_terminal"].float()).unsqueeze(-1)
             data["is_first"] = data["is_first"].float()
 
             losses = model._eval(data)
-            losses = {k: torch.mean(v) for k, v in losses.items()}
+            losses = {k: torch.mean(v).item() for k, v in losses.items()}
             losses_all.append(TensorDict(losses, []))
+            pbar.set_postfix(losses)
     losses_all = torch.stack(losses_all)
     losses_all = {k: torch.mean(v).item() for k, v in losses_all.items()}
     

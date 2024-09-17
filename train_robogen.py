@@ -21,7 +21,7 @@ from torchvision.transforms.functional import resize
 
 FILE_PATH = os.path.dirname(os.path.realpath(__file__))
 
-DATASET_ROOT = "/media/aa/hdd1/cf/data/train"
+DATASET_ROOT = "/media/aa/hdd1/cf/data/"
 IMAGE_SIZE = (128, 128)
 
 
@@ -46,21 +46,21 @@ class RoboGenDataset(Dataset):
         return data
     
     @classmethod
-    def make(cls, root_dir: str, seq_length: int):
+    def make(cls, root_dir: str, seq_length: int, max_episodes: int = None):
         task_episodes = {}
         task_lengths = {}
         for task in os.listdir(root_dir):
             task_path = os.path.join(root_dir, task)
             episode_paths = [
-                os.path.join(task_path, episode) 
-                for episode in os.listdir(task_path)
-                if episode.endswith(".pt")
+                os.path.join(task_path, path)
+                for path in os.listdir(task_path) 
+                if path.endswith(".pt")
             ]
-            episode_lengths = [
-                int(episode[:-3].split("_")[-1])
-                for episode in os.listdir(task_path)
-                if episode.endswith(".pt")
-            ]
+            print(f"{task}: {len(episode_paths)} episodes")
+            if max_episodes is not None:
+                episode_paths = episode_paths[:max_episodes]
+            
+            episode_lengths = list(map(lambda x: int(x.split("_")[-1][:-3]), episode_paths))
             task_episodes[task] = episode_paths
             task_lengths[task] = sum(episode_lengths)
         total_length = sum(task_lengths.values())
@@ -103,15 +103,23 @@ class RoboGenDataset(Dataset):
         return cls(data, seq_length)
 
 
-dataset = RoboGenDataset.make(DATASET_ROOT, 40)
 
 
 @hydra.main(config_path=os.path.join(FILE_PATH, "cfg"), config_name="train")
 def main(cfg):
     device = cfg.world_model.device
 
-    run = wandb.init(project="GensimEval", entity="btx0424")
+    dataset_path = os.path.join(DATASET_ROOT, cfg.dataset)
+    dataset = RoboGenDataset.make(dataset_path, 40, max_episodes=cfg.max_episodes)
+    
+    run = wandb.init(
+        project="GensimEval",
+        entity="btx0424",
+        mode=cfg.wandb.mode,
+        name=f"robogen-{cfg.max_episodes}",
+    )
     run.config["project"] = "robogen"
+    run.config["max_episodes"] = cfg.max_episodes
 
     model = WorldModel(
         obs_space=gym.spaces.Dict(
@@ -139,7 +147,7 @@ def main(cfg):
     )
 
     for epoch in range(cfg.get("epochs", 10)):
-        for i, data in enumerate(dataloader):
+        for i, data in enumerate(tqdm(dataloader)):
             # some manual processing
             data = data.to(device)
             data["image"] = data["image"][..., :3] / 255.0
@@ -151,6 +159,10 @@ def main(cfg):
             print(f"Epoch {epoch}, iteration {i}")
             pprint(metrics)
             
+            if i % 20 == 0:
+                print(f"Epoch {epoch}, iteration {i}")
+                pprint(metrics)
+
             if (i + 1) % 500 == 0:
                 with torch.no_grad():
                     results = model.video_pred(data).cpu() * 255.0
